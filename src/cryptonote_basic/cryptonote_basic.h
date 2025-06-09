@@ -417,6 +417,15 @@ namespace cryptonote
     loki_version_4_tx_types,
   };
 
+  enum arqma_version
+  {
+    arqma_version_0 = 0,
+    arqma_version_1,
+    arqma_version_2,
+    arqma_version_3,
+    arqma_version_4,
+  };
+
   class transaction_prefix
   {
 
@@ -446,7 +455,7 @@ namespace cryptonote
 
     // SALVIUM-SPECIFIC FIELDS
     // TX type
-    cryptonote::salvium_transaction_type tx_type;
+    cryptonote::salvium_transaction_type salvium_tx_type;
     crypto::public_key return_address;
     // Return address list (must be at least 1 and at most BULLETPROOF_MAX_OUTPUTS-1 - the "-1" is for the change output)
     std::vector<crypto::public_key> return_address_list;
@@ -474,6 +483,17 @@ namespace cryptonote
       loki_type_key_image_unlock,
       loki_type_count,
     };
+
+    enum arqma_type_t
+    {
+      arqma_type_standard,
+      arqma_type_state_change,
+      arqma_type_key_image_unlock,
+      arqma_type_stake,
+      arqma_type_count,
+    };
+
+    uint16_t arqma_tx_type;
 
     union
     {
@@ -736,10 +756,10 @@ namespace cryptonote
         FIELD(vin_salvium)
         FIELD(vout_salvium)
         FIELD(extra)
-        VARINT_FIELD(tx_type)
-        if (tx_type != cryptonote::salvium_transaction_type::PROTOCOL) {
+        VARINT_FIELD_N("tx_type", salvium_tx_type)
+        if (salvium_tx_type != cryptonote::salvium_transaction_type::PROTOCOL) {
           VARINT_FIELD(amount_burnt)
-          if (tx_type != cryptonote::salvium_transaction_type::MINER) {
+          if (salvium_tx_type != cryptonote::salvium_transaction_type::MINER) {
             if (type == cryptonote::salvium_transaction_type::TRANSFER && version >= TRANSACTION_VERSION_N_OUTS) {
               FIELD(return_address_list)
               FIELD(return_address_change_mask)
@@ -756,6 +776,12 @@ namespace cryptonote
       } else {
   
         VARINT_FIELD(version)
+        if (version > arqma_version_2 && (blob_type == BLOB_TYPE_CRYPTONOTE_ARQMA))
+        {
+          VARINT_FIELD_N("tx_type", arqma_tx_type)
+          FIELD(output_unlock_times)
+        }
+
         if (version > loki_version_2 && (blob_type == BLOB_TYPE_CRYPTONOTE_LOKI || blob_type == BLOB_TYPE_CRYPTONOTE_XTNC))
         {
           FIELD(output_unlock_times)
@@ -775,12 +801,17 @@ namespace cryptonote
         else
           FIELD(vout)
   
-        if (blob_type == BLOB_TYPE_CRYPTONOTE_LOKI || blob_type == BLOB_TYPE_CRYPTONOTE_XTNC)
+        if (blob_type == BLOB_TYPE_CRYPTONOTE_ARQMA || blob_type == BLOB_TYPE_CRYPTONOTE_LOKI || blob_type == BLOB_TYPE_CRYPTONOTE_XTNC)
         {
           if (version >= loki_version_3_per_output_unlock_times && vout.size() != output_unlock_times.size()) return false;
         }
         FIELD(extra)
-        if ((blob_type == BLOB_TYPE_CRYPTONOTE_LOKI || blob_type == BLOB_TYPE_CRYPTONOTE_XTNC) && version >= loki_version_4_tx_types)
+        if (blob_type == BLOB_TYPE_CRYPTONOTE_ARQMA && version >= arqma_version_4)
+        {
+          VARINT_FIELD(type)
+          if (static_cast<uint16_t>(type) >= arqma_type_count) return false;
+        }
+        else if ((blob_type == BLOB_TYPE_CRYPTONOTE_LOKI || blob_type == BLOB_TYPE_CRYPTONOTE_XTNC) && version >= loki_version_4_tx_types)
         {
           VARINT_FIELD(type)
           if (static_cast<uint16_t>(type) >= loki_type_count) return false;
@@ -924,7 +955,7 @@ namespace cryptonote
     output_unlock_times.clear();
     collateral_indices.clear();
     // SAL
-    tx_type = cryptonote::salvium_transaction_type::UNSET;
+    salvium_tx_type = cryptonote::salvium_transaction_type::UNSET;
     return_address = cryptonote::null_pkey;
     return_address_list.clear();
     return_address_change_mask.clear();
@@ -932,6 +963,7 @@ namespace cryptonote
     source_asset_type.clear();
     destination_asset_type.clear();
     amount_slippage_limit = 0;
+    arqma_tx_type = 0;
   }
 
   inline
